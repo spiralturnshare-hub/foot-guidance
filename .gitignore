@@ -35,3 +35,4 @@ next-env.d.ts
 .env.production
 # Manus
 .manus/
+.github/
