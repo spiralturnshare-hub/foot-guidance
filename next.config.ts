@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     );
     return config;
   },
+  output: "export",
   images: {
     unoptimized: true,
   },
