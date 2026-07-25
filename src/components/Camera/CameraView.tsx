@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAudio } from "@/hooks/useAudio";
-import Image from "next/image";
-import { useSearchParams } from "next/navigation";
 import { getAssetPath } from "@/lib/basePath";
 import LevelIndicator/*, { requestLevelPermission }*/ from "./LevelIndicator";
 
@@ -62,10 +60,9 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     const [paperPoints, setPaperPoints] = useState("36.0,41.8 64.0,41.8 64.0,22.0 36.0,22.0");
     const [videoRect, setVideoRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
     const { play } = useAudio();
-    const searchParams = useSearchParams();
-
-    const orderId = searchParams.get("orderid") || "";
-    const name = searchParams.get("name") || "";
+    const _searchParams = new URLSearchParams(window.location.search);
+    const orderId = _searchParams.get("orderid") || "";
+    const name = _searchParams.get("name") || "";
 
     const updateVideoRect = useCallback(() => {
         const video = videoRef.current;
@@ -600,7 +597,7 @@ export default function CameraView({ onCapture }: CameraViewProps) {
                                 transform: 'translateY(0)',
                             }}
                         >
-                            <Image src={getAssetPath("/assets/ashiura.png")} alt="Icon" width={iconSize} height={Math.round(iconSize * 38 / 54)} className="" />
+                            <img src={getAssetPath("/assets/ashiura.png")} alt="Icon" width={iconSize} height={Math.round(iconSize * 38 / 54)} className="" />
                         </div>
                         {/* 白い吹き出し枠：文字のみ */}
                         <div

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>足計測ガイダンス</title>
+    <link rel="icon" href="/favicon.ico" />
+    <!-- Geist Font via Google Fonts CDN (Next.js next/font/google の代替) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap" rel="stylesheet" />
+    <!-- 横向き警告オーバーレイ（縦向き時に表示） -->
+    <div id="landscape-warning" style="display:none; position:fixed; inset:0; background:#000; z-index:99999; flex-direction:column; align-items:center; justify-content:center; color:white; text-align:center; padding:20px;">
+      <p style="font-size:1.5rem; font-weight:bold; margin-bottom:1rem;">📱 横向きにしてください</p>
+      <p style="font-size:1rem;">このアプリは横向き（ランドスケープ）専用です。</p>
+    </div>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-export const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+export const basePath = import.meta.env.VITE_BASE_PATH || "";
 
 export function getAssetPath(path: string): string {
   if (path.startsWith("http") || path.startsWith("data:")) {
