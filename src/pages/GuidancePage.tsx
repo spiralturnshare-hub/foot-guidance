@@ -4,23 +4,44 @@ import CameraView from "@/components/Camera/CameraView";
 import PreviewModal from "@/components/Review/PreviewModal";
 import { uploadImage } from "@/lib/api";
 import { saveImageToDevice } from "@/lib/saveImage";
+import { annotateImage } from "@/lib/annotateImage";
+
+// 撮影日時を "YYYY-MM-DD HH:mm"(ローカル時刻)で返す
+function formatNow(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 export default function GuidancePage() {
   const searchParams = new URLSearchParams(window.location.search);
   const isFromFF = searchParams.get("from") === "ff";
+  // upload-center から「かんたん撮影アプリを起動」ボタンで開かれたモード。
+  // 撮影→焼き込み→アップロード→端末ダウンロード→呼び出し元へ postMessage→自動クローズ。
+  const isFromUploadCenter = searchParams.get("from") === "upload-center";
+  const isEmbedded = isFromFF || isFromUploadCenter;
+
   const [orderId, setOrderId] = useState(searchParams.get("orderid") || "");
   const [userName, setUserName] = useState(searchParams.get("name") || "");
   const [userId] = useState(searchParams.get("userid") || searchParams.get("userId") || "");
   const [uploadId] = useState(searchParams.get("uploadid") || searchParams.get("upload_id") || "");
+  // 画像に焼き込む注文番号(注文名)。無ければ orderId を使う。
+  const orderLabel = searchParams.get("ordername") || searchParams.get("orderName") || orderId;
+  // postMessage の宛先オリジン(upload-center 側が自分の origin を渡す)
+  const returnOrigin = searchParams.get("origin") || "";
+
   const [mode, setMode] = useState<"auth" | "guidance" | "camera">(
-    isFromFF ? "guidance" : (searchParams.get("orderid") && searchParams.get("name")) ? "guidance" : "auth"
+    isFromFF || (isFromUploadCenter && !!orderId && !!uploadId)
+      ? "guidance"
+      : (searchParams.get("orderid") && searchParams.get("name"))
+        ? "guidance"
+        : "auth"
   );
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // FlutterFlowモード: URLハッシュからSupabaseセッションを復元
+  // 埋め込みモード(FF / upload-center): URLハッシュからSupabaseセッションを復元
   useEffect(() => {
-    if (isFromFF && window.location.hash) {
+    if (isEmbedded && window.location.hash) {
       const hash = window.location.hash.substring(1);
       const params = new URLSearchParams(hash);
       const accessToken = params.get("access_token");
@@ -37,7 +58,7 @@ export default function GuidancePage() {
         });
       }
     }
-  }, [isFromFF]);
+  }, [isEmbedded]);
 
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,23 +75,40 @@ export default function GuidancePage() {
   const handleSubmit = async () => {
     if (!capturedBlob) return;
     setIsSubmitting(true);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `foot_image_${timestamp}.jpg`;
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, "-");
+    const labelForName = (orderLabel || "foot").replace(/[^\w.\-]/g, "_");
+    const filename = `foot_${labelForName}_${timestamp}.jpg`;
     try {
-      if (isFromFF) {
-        saveImageToDevice(capturedBlob, filename);
-        const res = await uploadImage(capturedBlob, orderId, uploadId, userId);
+      // 撮影画像に注文番号と撮影日時をピクセルとして焼き込む
+      const annotated = await annotateImage(capturedBlob, [
+        `注文番号: ${orderLabel || "(不明)"}`,
+        `撮影日時: ${formatNow(now)}`,
+      ]);
+
+      if (isEmbedded) {
+        // 端末にダウンロード + Green Storage / uploads_files へアップロード
+        saveImageToDevice(annotated, filename);
+        const res = await uploadImage(annotated, orderId, uploadId, userId, filename);
         if (res.success) {
           alert("画像をアップロードしました。端末にも画像が保存されました");
-          if ((window as any).ff_webview_handler) {
-            (window as any).ff_webview_handler.postMessage(JSON.stringify({ success: true, message: "upload complete" }));
+          if (isFromFF && (window as any).ff_webview_handler) {
+            (window as any).ff_webview_handler.postMessage(
+              JSON.stringify({ success: true, message: "upload complete" })
+            );
+          }
+          if (isFromUploadCenter && window.opener) {
+            window.opener.postMessage(
+              { source: "foot-guidance", status: "uploaded", uploadId, orderId, kind: "foot" },
+              returnOrigin || "*"
+            );
           }
           window.close();
         } else {
           alert(`アップロードに失敗しました: ${res.message}`);
         }
       } else {
-        saveImageToDevice(capturedBlob, filename);
+        saveImageToDevice(annotated, filename);
         alert("端末に保存されました");
         window.close();
       }
@@ -132,7 +170,7 @@ export default function GuidancePage() {
           onRetake={handleRetake}
           onSubmit={handleSubmit}
           isSubmitting={isSubmitting}
-          mode={isFromFF ? "ff" : "direct"}
+          mode={isEmbedded ? "ff" : "direct"}
         />
       )}
     </main>

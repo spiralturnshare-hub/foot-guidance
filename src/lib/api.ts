@@ -5,7 +5,8 @@ export async function uploadImage(
     blob: Blob,
     orderId: string,
     providedUploadId?: string,
-    providedUserId?: string
+    providedUserId?: string,
+    filenameBase: string = 'foot_image.jpg'
 ): Promise<{ success: boolean; message: string }> {
     try {
         let userId = providedUserId;
@@ -43,11 +44,12 @@ export async function uploadImage(
             uploadId = uploadRecord.id;
         }
 
-        // Storage へのアップロード
-        const filePath = `${userId}/live/${uploadId}/${kind}/${uploadFileId}/foot_image.jpg`;
+        // Storage へのアップロード。ファイル名は呼び出し側から注文番号入りを渡せる。
+        const safeName = (filenameBase || 'foot_image.jpg').replace(/[^\w.\-]/g, '_');
+        const filePath = `${userId}/live/${uploadId}/${kind}/${uploadFileId}/${safeName}`;
         const { error: storageError } = await supabase.storage
             .from('upsys')
-            .upload(filePath, blob, { contentType: 'image/jpeg' });
+            .upload(filePath, blob, { contentType: blob.type || 'image/jpeg' });
 
         if (storageError) {
             console.error("Storage upload error:", storageError);
@@ -66,6 +68,8 @@ export async function uploadImage(
                 file_type: 'image',
                 kind: kind,
                 url: filePath,
+                mime_type: blob.type || 'image/jpeg',
+                file_size: blob.size,
                 updated_at: new Date().toISOString()
             });
 
