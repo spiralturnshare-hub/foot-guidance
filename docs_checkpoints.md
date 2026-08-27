@@ -28,8 +28,8 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 内容: このセッションでの変更着手前のベースライン。URLパラメータ or FlutterFlow webview からコンテキストを受け取り、音声ガイダンス→カメラ撮影→端末保存(+`from=ff`のときのみ Green Storage アップロード)する状態。
 
 ### CP1 (2026-08-27 upload-center連携モードと画像焼き込みを追加)
-- コミット: `<push後hash>`
-- Vercel Production: `<push後デプロイ>`
+- コミット: `9d61af2`("feat: upload-center連携モード + 撮影画像への注文番号/日時焼き込み")
+- Vercel Production: `foot-guidance-4hzhoafb6`(公開URL `https://foot-guidance.vercel.app`)
 - 内容(docs/17「アップロード完全音声化ビジョン」の第一歩・フェーズ1):
   - `GuidancePage.tsx`: `?from=upload-center` モードを追加。`orderid`/`ordername`/`uploadid`/`userid` + URLハッシュの Supabase セッションを受け取り auth 画面をスキップ。撮影完了時に「焼き込み画像を端末ダウンロード + `uploadImage` で Green Storage/`uploads_files` へアップロード + `window.opener.postMessage({source:'foot-guidance',status:'uploaded',uploadId,orderId,kind:'foot'}, origin)` + `window.close()`」。`from=ff` の既存挙動は維持。
   - `src/lib/annotateImage.ts`(新規): canvas で撮影画像下部に半透明帯を敷き「注文番号」「撮影日時」をピクセルとして焼き込む。失敗時は元画像。
