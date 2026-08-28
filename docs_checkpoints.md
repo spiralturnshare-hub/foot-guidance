@@ -132,7 +132,7 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 戻し方: `git reset --hard c136937`(= CP2-fix3)、または Vercel で CP2-fix3 のデプロイを Promote。
 
 ### CP2-fix5 (2026-08-28 全画面OK後も A4枠が小さい問題の本修正: 映像の縦横比取得を堅牢化)
-- コミット: `<push後に記録>`
+- コミット: `11ab964`("fix(ios): A4枠が小さいままの本修正 — 映像の縦横比取得を堅牢化")
 - 症状: CP2-fix4 で iPhone の全画面化は成功(スクショで Safari chrome が消えた)。しかし A4枠・
   足型ガイドがまだ小さい。スクショ上の A4枠サイズ(約145px相当)を逆算すると `videoRect.width`
   ≈ 240 CSS で計算されている。これは container 926x428 CSS に対し **videoRatio ≈ 0.56(縦向き
