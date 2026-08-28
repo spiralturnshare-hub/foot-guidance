@@ -52,7 +52,7 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 戻し方: Vercel Deployments で CP1(`foot-guidance-4hzhoafb6`)を Promote to Production。
 
 ### CP2-fix (2026-08-28 D の回帰修正: A4枠が極端に縮小する問題)
-- コミット: `<push後に記録>`
+- コミット: `2870d76`("fix: カメラガイド(A4枠/足型)が極端に縮小する回帰を修正")
 - 症状(冨永社長報告): `032752d` デプロイ後、カメラは全画面になったが A4 の点線枠・足型ガイドが極端に小さくなり撮影不能。
 - 原因: D で追加した `screen.orientation.lock("landscape")` が「表示の向き」だけを強制回転させる一方、`getUserMedia` のカメラ映像は「物理デバイスの向き」に従う。端末を縦に持ったまま起動すると縦長映像を横長コンテナに `object-contain` 表示 → 左右に大きな黒帯 → `CameraView` の `videoRect.width` が 1/2〜1/3 に縮小。ガイド寸法は全て `videoRect.width` 基準(`sc = videoRect.width * 0.28 / 297`)のため、A4枠・足型が同率で縮む。
 - 修正:
