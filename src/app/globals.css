@@ -23,6 +23,19 @@
   }
 }
 
+/* html/body/#root に明示高さを与える。iOS Safari ではこれがあると横向き時に
+   ツールバー/タブ帯を格納しやすくなる(この会話の CP2-fix ビルドで chrome が
+   消えていた状態の再現)。
+   【副作用の封じ込め】以前この指定で A4枠が縮んだのは、CameraView の
+   updateVideoRect() が <video> の getBoundingClientRect()(iOS で潰れる)を
+   基準にしていたため。現在は window.visualViewport 基準に変更済みで、
+   chrome の表示/非表示に追従して再計測するので縮まない。 */
+html,
+body,
+#root {
+  height: 100%;
+}
+
 html,
 body {
   overscroll-behavior: none;
@@ -32,6 +45,9 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  /* iOS Safari のツールバー格納を誘発するための 1px スクロール余地。
+     CameraView 表示時に window.scrollTo(0,1) と併用する。 */
+  min-height: calc(100% + 1px);
 }
 
 

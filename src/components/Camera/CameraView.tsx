@@ -70,16 +70,19 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         const video = videoRef.current;
         if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
 
-        // コンテナ = <video> の親(className="fixed inset-0")が占める領域 = レイアウト
-        // ビューポート。実寸は必ず window.innerWidth/innerHeight で取る。
+        // コンテナ = <video> の親(className="fixed inset-0")が占める領域 = 実際に
+        // 見えているビューポート。visualViewport は Safari のツールバー/タブ帯が
+        // 表示/非表示に切り替わると即座にサイズが変わり、chrome が引っ込めば full に
+        // 近づく。ここを基準にすれば、chrome が消えたら A4枠も自動で最適サイズに広がる。
         //  【過去の失敗と対策 (2026-08-28)】以前は video.getBoundingClientRect() を使って
         //   いたが、モバイル Safari では <video className="w-full h-full"> の height:100% が
         //   親(position:fixed + inset-0)に対して解決されず <video> が中途半端な高さに
         //   潰れて計測され、A4枠・足型ガイドが極端に小さくなる事故が起きた(冨永社長報告)。
-        //   getBoundingClientRect は「潰れた瞬間」を掴むと二度と直らない。innerWidth/
-        //   innerHeight は <video> の描画状態に依存しないため、この事故が起きない。
-        const containerWidth = window.innerWidth;
-        const containerHeight = window.innerHeight;
+        //   getBoundingClientRect は「潰れた瞬間」を掴むと二度と直らない。visualViewport /
+        //   innerWidth/innerHeight は <video> の描画状態に依存しないため、この事故が起きない。
+        const vv = window.visualViewport;
+        const containerWidth = vv?.width ?? window.innerWidth;
+        const containerHeight = vv?.height ?? window.innerHeight;
         const videoRatio = video.videoWidth / video.videoHeight;
         const containerRatio = containerWidth / containerHeight;
 
@@ -131,6 +134,9 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         window.addEventListener("orientationchange", handleResize);
         document.addEventListener("fullscreenchange", remeasureWithDelays);
         document.addEventListener("webkitfullscreenchange", remeasureWithDelays);
+        // iOS Safari: ツールバー/タブ帯の開閉は visualViewport の resize/scroll で通知される
+        window.visualViewport?.addEventListener("resize", handleResize);
+        window.visualViewport?.addEventListener("scroll", handleResize);
 
         // 初期描画直後にも数回測り直す(カメラ権限ダイアログ・ツールバー確定待ち)
         remeasureWithDelays();
@@ -141,8 +147,25 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             window.removeEventListener("orientationchange", handleResize);
             document.removeEventListener("fullscreenchange", remeasureWithDelays);
             document.removeEventListener("webkitfullscreenchange", remeasureWithDelays);
+            window.visualViewport?.removeEventListener("resize", handleResize);
+            window.visualViewport?.removeEventListener("scroll", handleResize);
         };
     }, [updateVideoRect]);
+
+    // iOS Safari のツールバー/タブ帯を能動的に格納させる。
+    // scrollTo(0,1) は body に 1px のスクロール余地(globals.css の min-height:calc(100%+1px))が
+    // ある時だけ効く。カメラ表示直後・少し遅延・タップ後 に繰り返しナッジする。
+    useEffect(() => {
+        const nudge = () => window.scrollTo(0, 1);
+        nudge();
+        const timers = [200, 600, 1200, 2000].map((ms) => setTimeout(nudge, ms));
+        const onTouchEnd = () => setTimeout(nudge, 50);
+        document.addEventListener("touchend", onTouchEnd, { passive: true });
+        return () => {
+            timers.forEach(clearTimeout);
+            document.removeEventListener("touchend", onTouchEnd);
+        };
+    }, []);
 
     // アンマウント時(撮影完了・戻る など)に全画面を解除する。
     useEffect(() => {
@@ -547,7 +570,15 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             {/*
               Bottom Controls Container: 下部コントロールエリア
             */}
-            <div className="absolute top-0 right-0 h-full w-[22%] flex flex-col items-center justify-end pb-4 px-2 gap-2 z-50">
+            <div
+                className="absolute top-0 right-0 h-full w-[22%] flex flex-col items-center justify-end pb-4 px-2 gap-2 z-50"
+                // viewport-fit=cover でノッチ/ホームバーの内側までコントロールを寄せる
+                style={{
+                    paddingRight: "max(0.5rem, env(safe-area-inset-right))",
+                    paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+                    paddingTop: "env(safe-area-inset-top)",
+                }}
+            >
                 {/*
                   Conditional Capture Button: 撮影ボタン
                   - 文字サイズ: <span> 内の text-* クラスで調整可能。
@@ -557,8 +588,12 @@ export default function CameraView({ onCapture }: CameraViewProps) {
                     <button
                         id="capture-button"
                         onClick={handleCapture}
+                        style={{
+                            bottom: "max(1rem, env(safe-area-inset-bottom))",
+                            right: "max(0.5rem, env(safe-area-inset-right))",
+                        }}
                         className={`
-                            absolute bottom-4 right-2 z-60 px-4 py-3 rounded-full font-bold text-white shadow-2xl transition-all duration-300 flex flex-col items-center leading-tight text-sm
+                            absolute z-60 px-4 py-3 rounded-full font-bold text-white shadow-2xl transition-all duration-300 flex flex-col items-center leading-tight text-sm
                             ${canCapture
                                 ? "bg-green-600 opacity-100 scale-110 shadow-[0_0_20px_rgba(34,197,94,0.6)]"
                                 : "bg-gray-600 opacity-50 scale-100"}
@@ -579,7 +614,13 @@ export default function CameraView({ onCapture }: CameraViewProps) {
 
 
                 {/* 音声案内チェックボックス: UI右上に固定配置 */}
-                <label className="absolute top-2 right-2 flex items-center gap-2 text-white cursor-pointer bg-black/50 px-3 py-1 rounded-full z-50">
+                <label
+                    style={{
+                        top: "max(0.5rem, env(safe-area-inset-top))",
+                        right: "max(0.5rem, env(safe-area-inset-right))",
+                    }}
+                    className="absolute flex items-center gap-2 text-white cursor-pointer bg-black/50 px-3 py-1 rounded-full z-50"
+                >
                     <input
                         type="checkbox"
                         checked={isAudioEnabled}

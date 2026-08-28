@@ -102,6 +102,35 @@ git push --force-with-lease        # 要事前確認・複数回許可
   基準なので縮小は起きない**。
 - 戻し方: `git reset --hard f14ed4c`(= CP2-fix2)、または Vercel で CP2-fix2 のデプロイを Promote。
 
+### CP2-fix4 (2026-08-28 iPhone 通常タブでの chrome 非表示を再現。`viewport-fit=cover` + `height:100%` を復活)
+- コミット: `<push後に記録>`
+- 経緯: 冨永社長より「以前(Next.js版)は URL 単発で iPhone でも全画面だった。CP2-fix3 では chrome が
+  残る」との指摘。旧 `503e339` ツリーを全検査した結果、旧版に全画面化コードは一切無し(manifest/API/
+  scroll hack/meta すべて無し)。ただし **この会話内の CP2-fix(`2870d76`)ビルドの iPhone スクショ
+  では Safari の chrome が写っていなかった**。そのビルドとの差分は `viewport-fit=cover` と
+  `html,body,#root{height:100%}` の有無のみ。CP2-fix でそれを外した理由は「A4枠が縮む」副作用だが、
+  その副作用の根本原因(ガイド寸法が潰れる `<video>` の実測依存)は CP2-fix3 で別途解消済み。
+  → よって「chrome を消す設定」と「A4枠が縮む」は分離できたので、前者だけ復活させる。
+- 変更:
+  - `src/app/globals.css`: `html, body, #root { height: 100% }` を復活。`body { min-height: calc(100% + 1px) }`
+    を追加(scrollTo(0,1) 用の 1px スクロール余地)。
+  - `index.html`: viewport meta に `viewport-fit=cover` を復活。
+  - `src/components/Camera/CameraView.tsx`:
+    - `updateVideoRect()` のコンテナ実寸を `window.innerWidth/innerHeight` →
+      **`window.visualViewport?.width/height`(fallback: innerW/H)** に変更。visualViewport は
+      Safari のツールバー/タブ帯の開閉で即座にサイズが変わるため、chrome が引っ込めば A4枠も
+      自動で最適サイズに広がる(縮んだままにならない核心)。
+    - `visualViewport` の `resize`/`scroll` を再計測トリガーに追加。
+    - 別 `useEffect` で `window.scrollTo(0,1)` を初期・遅延(200/600/1200/2000ms)・`touchend` 後に
+      繰り返しナッジし、iOS Safari のツールバー格納を能動的に誘発。
+    - 撮影ボタン / 音声トグル / 右コントロール列に `env(safe-area-inset-*)` を付与
+      (`viewport-fit=cover` でノッチ/ホームバーに被らないように)。
+- 期待: iPhone 横向き・通常タブで、CP2-fix と同様に Safari の chrome がほぼ消え、かつ A4枠は
+  正しいサイズを維持(visualViewport 追従のため)。Android は Fullscreen API で従来どおり真の全画面。
+- 未確定: iOS のバージョン/設定(「タブバーを表示」等)によってはタブ帯が残る可能性。その場合の
+  確実解は「ホーム画面に追加」(manifest 設置済み)。
+- 戻し方: `git reset --hard c136937`(= CP2-fix3)、または Vercel で CP2-fix3 のデプロイを Promote。
+
 ---
 
 ## DB migration 010(RLS 硬化)適用 2026-08-28 — コード変更なし
