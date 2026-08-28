@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAudio } from "@/hooks/useAudio";
 import { getAssetPath } from "@/lib/basePath";
+import { enterFullscreen, exitFullscreen } from "@/lib/fullscreen";
 import LevelIndicator/*, { requestLevelPermission }*/ from "./LevelIndicator";
 
 interface CameraViewProps {
@@ -39,6 +40,7 @@ const STEPS = [
 ];
 
 export default function CameraView({ onCapture }: CameraViewProps) {
+    const rootRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [stepIndex, setStepIndex] = useState(-1); // -1: Initial state before first click
@@ -68,9 +70,16 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         const video = videoRef.current;
         if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
 
-        const rect = video.getBoundingClientRect();
-        const containerWidth = rect.width;
-        const containerHeight = rect.height;
+        // コンテナ = <video> の親(className="fixed inset-0")が占める領域 = レイアウト
+        // ビューポート。実寸は必ず window.innerWidth/innerHeight で取る。
+        //  【過去の失敗と対策 (2026-08-28)】以前は video.getBoundingClientRect() を使って
+        //   いたが、モバイル Safari では <video className="w-full h-full"> の height:100% が
+        //   親(position:fixed + inset-0)に対して解決されず <video> が中途半端な高さに
+        //   潰れて計測され、A4枠・足型ガイドが極端に小さくなる事故が起きた(冨永社長報告)。
+        //   getBoundingClientRect は「潰れた瞬間」を掴むと二度と直らない。innerWidth/
+        //   innerHeight は <video> の描画状態に依存しないため、この事故が起きない。
+        const containerWidth = window.innerWidth;
+        const containerHeight = window.innerHeight;
         const videoRatio = video.videoWidth / video.videoHeight;
         const containerRatio = containerWidth / containerHeight;
 
@@ -111,15 +120,36 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             setTimeout(updateVideoRect, 100);
         };
 
+        // 全画面の出入り・iOS Safari のツールバー開閉後にビューポート実寸が変わる。
+        // 複数回のディレイ付きで測り直し、確定値に収束させる。
+        const remeasureWithDelays = () => {
+            updateVideoRect();
+            [150, 400, 800].forEach((ms) => setTimeout(updateVideoRect, ms));
+        };
+
         window.addEventListener("resize", handleResize);
         window.addEventListener("orientationchange", handleResize);
+        document.addEventListener("fullscreenchange", remeasureWithDelays);
+        document.addEventListener("webkitfullscreenchange", remeasureWithDelays);
+
+        // 初期描画直後にも数回測り直す(カメラ権限ダイアログ・ツールバー確定待ち)
+        remeasureWithDelays();
 
         return () => {
             observer.disconnect();
             window.removeEventListener("resize", handleResize);
             window.removeEventListener("orientationchange", handleResize);
+            document.removeEventListener("fullscreenchange", remeasureWithDelays);
+            document.removeEventListener("webkitfullscreenchange", remeasureWithDelays);
         };
     }, [updateVideoRect]);
+
+    // アンマウント時(撮影完了・戻る など)に全画面を解除する。
+    useEffect(() => {
+        return () => {
+            void exitFullscreen();
+        };
+    }, []);
 
     useEffect(() => {
         if (stepIndex === STEPS.length - 1) {
@@ -186,6 +216,11 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     }, []);
 
     const handleNextStep = async () => {
+        // カメラ画面内の最初のタップで全画面化を要求する(ユーザー操作の延長でないと
+        // requestFullscreen が弾かれる)。対象は <html> ではなくカメラのコンテナ div
+        // に限定。既に全画面なら fullscreen.ts 側で no-op。iOS Safari は非対応で no-op。
+        void enterFullscreen(rootRef.current);
+
         const nextStep = stepIndex + 1;
 
         /*
@@ -285,7 +320,7 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     };
 
     return (
-        <div className="fixed inset-0 h-[100dvh] overflow-hidden bg-black touch-none">
+        <div ref={rootRef} className="fixed inset-0 h-[100dvh] overflow-hidden bg-black touch-none">
             {/* Landscape Warning Overlay */}
             <div id="landscape-warning" className="pointer-events-auto">
                 <div className="flex flex-col items-center gap-4">

@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>足計測ガイダンス</title>
     <link rel="icon" href="/favicon.ico" />
+    <!-- PWA:「ホーム画面に追加」でブラウザUIごと隠して起動する導線(特に iOS。
+         通常タブでは何も変化しない。viewport-fit=cover や height CSS は入れない
+         — A4枠が縮む回帰の原因だったため。詳細は src/lib/fullscreen.ts) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="足計測ガイダンス" />
+    <link rel="apple-touch-icon" href="/assets/ashiura.png" />
     <!-- Geist Font via Google Fonts CDN (Next.js next/font/google の代替) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

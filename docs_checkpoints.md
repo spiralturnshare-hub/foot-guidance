@@ -72,6 +72,36 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 期待: この後デプロイして実機確認 → A4 枠が使えるサイズに戻れば「D が主因」。戻らなければ潜在バグ確定 → Step2(`updateVideoRect` をビューポート実寸基準に書き換え)へ。
 - 戻し方: Vercel Deployments で CP1(`foot-guidance-4hzhoafb6`)を Promote、または `git reset --hard 4d90d79`。
 
+### CP2-fix3 (2026-08-28 A案 Step2: 原因を避けて全画面化を再導入)
+- コミット: `<push後に記録>`
+- 前提: CP2-fix2(`f14ed4c`)デプロイ後、冨永社長確認で **A4枠・足型は正しいサイズに戻った**。
+  → A4枠が縮んだ主因は私の D 変更(特に `globals.css` の `html, body, #root { height: 100% }`。
+     iOS Safari で `html` に明示高さを与えると `position: fixed` の基準高さがツールバー表示時の
+     短いビューポートに縮み、その短い値でガイド寸法が計算され固定されていた)と確定。
+  → ただし本来の要望(カメラが画面いっぱいにならない・上にブラウザのタブ帯が残る)は未解決。
+- 対応: 縮小の原因(`orientation.lock` / `html,body,#root{height:100%}` / `viewport-fit=cover` /
+  `<html>` を全画面対象にする)を **一切使わずに** 全画面化を再導入:
+  - `src/components/Camera/CameraView.tsx`:
+    - `updateVideoRect()` のコンテナ実寸を `video.getBoundingClientRect()` →
+      **`window.innerWidth / window.innerHeight`** に変更。`<video>` の描画状態に依存しないため
+      「潰れた瞬間を掴んで固定」事故が原理的に起きない。これが Step2 の本丸。
+    - `fullscreenchange`/`webkitfullscreenchange` + マウント直後に、ディレイ付き(150/400/800ms)で
+      `updateVideoRect()` を測り直し、確定値に収束させる。
+    - ルート `<div>` に `rootRef` を付け、カメラ画面内の最初のタップ(`handleNextStep`)で
+      `enterFullscreen(rootRef.current)` を要求。対象は `<html>` ではなくこの div に限定。
+    - アンマウント時に `exitFullscreen()`。
+  - `src/lib/fullscreen.ts`(新規・簡素版): 指定要素の `requestFullscreen()` のみ。向きロックなし、
+    CSS 変更なし。iOS Safari は非対応で no-op。
+  - `index.html`: PWA manifest / apple-mobile-web-app 系メタを再追加(**`viewport-fit=cover` は入れない**)。
+    通常タブでは無変化。「ホーム画面に追加」した時だけ iOS でも chrome レス起動できる導線。
+  - `public/manifest.webmanifest`(新規再追加): `display:"fullscreen"` / `orientation:"landscape"`。
+  - `src/app/globals.css` / `src/pages/GuidancePage.tsx`: **変更なし**(CP2-fix2 の状態を維持)。
+- 効果の線引き: Android Chrome = ブラウザ chrome が消えて真の全画面 ◎ / iOS Safari(通常タブ)=
+  Fullscreen API 非対応のため chrome は残る(スクロールで最小化のみ)。iOS で完全 chrome レスに
+  するには「ホーム画面に追加」。どちらの場合も **ガイド寸法は `window.innerWidth/innerHeight`
+  基準なので縮小は起きない**。
+- 戻し方: `git reset --hard f14ed4c`(= CP2-fix2)、または Vercel で CP2-fix2 のデプロイを Promote。
+
 ---
 
 ## DB migration 010(RLS 硬化)適用 2026-08-28 — コード変更なし
