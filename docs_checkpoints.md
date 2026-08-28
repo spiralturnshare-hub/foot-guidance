@@ -48,5 +48,14 @@ git push --force-with-lease        # 要事前確認・複数回許可
   - **A. 顧客ID要求画面が最初に出る**: `GuidancePage.tsx` の初期モード判定が `isFromUploadCenter && !!orderId && !!uploadId` で、orderId 未設定(ゲスト/未決済フロー)だと auth 入力フォームが表示されてしまう。`uploadId` があれば撮影ガイダンスへ直行するよう緩和する。
   - **B. 自動アップロードされない**: `src/lib/supabase.ts` が `import.meta.env.VITE_SUPABASE_*` のフォールバック無し(`|| ''`)。Vercel env 未設定だと全アップロードが即失敗する。foot-measure と同様に Green の URL/anon key を定数フォールバックとして持たせる。あわせてセッション復元を await 化し、失敗理由を画面に具体表示する。
   - **C. 撮影端末にダウンロードされない**: `saveImageToDevice` の `<a download>` 方式は iOS Safari が無視し、直後の `window.close()` と競合する。モバイルは `navigator.share({files})` に切替、非対応/PCは従来方式。保存完了を待ってから閉じる。
-  - **D. カメラ全画面化**: Fullscreen API + `screen.orientation.lock('landscape')` + `viewport-fit=cover`/`100dvh` + PWA manifest。A4枠・足型・案内文字のオーバーレイは現状の `videoRect` 基準描画のまま完全維持。
+  - **D. カメラ全画面化**: Fullscreen API + `viewport-fit=cover`/`100dvh` + PWA manifest。A4枠・足型・案内文字のオーバーレイは現状の `videoRect` 基準描画のまま完全維持。
 - 戻し方: Vercel Deployments で CP1(`foot-guidance-4hzhoafb6`)を Promote to Production。
+
+### CP2-fix (2026-08-28 D の回帰修正: A4枠が極端に縮小する問題)
+- コミット: `<push後に記録>`
+- 症状(冨永社長報告): `032752d` デプロイ後、カメラは全画面になったが A4 の点線枠・足型ガイドが極端に小さくなり撮影不能。
+- 原因: D で追加した `screen.orientation.lock("landscape")` が「表示の向き」だけを強制回転させる一方、`getUserMedia` のカメラ映像は「物理デバイスの向き」に従う。端末を縦に持ったまま起動すると縦長映像を横長コンテナに `object-contain` 表示 → 左右に大きな黒帯 → `CameraView` の `videoRect.width` が 1/2〜1/3 に縮小。ガイド寸法は全て `videoRect.width` 基準(`sc = videoRect.width * 0.28 / 297`)のため、A4枠・足型が同率で縮む。
+- 修正:
+  - `src/lib/fullscreen.ts`: `screen.orientation.lock/unlock` を撤去。全画面化(`requestFullscreen`)のみ残す(全画面は A4 のピクセル数を増やす=計測誤差減で望ましい)。向きは変更前と同じく利用者が物理的に横向きにする(縦向き警告オーバーレイで誘導)。
+  - `src/components/Camera/CameraView.tsx`: `fullscreenchange`/`webkitfullscreenchange` で `updateVideoRect()` を遷移後(150ms/450ms)に測り直すハンドラを追加。遷移中の中途半端なサイズで固定されるのを防ぐ。
+- 戻し方: 同上(CP1 を Promote、または `git reset --hard 032752d`)。
