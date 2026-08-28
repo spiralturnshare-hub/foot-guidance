@@ -103,7 +103,7 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 戻し方: `git reset --hard f14ed4c`(= CP2-fix2)、または Vercel で CP2-fix2 のデプロイを Promote。
 
 ### CP2-fix4 (2026-08-28 iPhone 通常タブでの chrome 非表示を再現。`viewport-fit=cover` + `height:100%` を復活)
-- コミット: `<push後に記録>`
+- コミット: `d40fbee`("fix(ios): iPhone 通常タブでの Safari chrome 非表示を再現(viewport-fit=cover + height:100% 復活)")
 - 経緯: 冨永社長より「以前(Next.js版)は URL 単発で iPhone でも全画面だった。CP2-fix3 では chrome が
   残る」との指摘。旧 `503e339` ツリーを全検査した結果、旧版に全画面化コードは一切無し(manifest/API/
   scroll hack/meta すべて無し)。ただし **この会話内の CP2-fix(`2870d76`)ビルドの iPhone スクショ
