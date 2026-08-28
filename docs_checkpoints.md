@@ -73,7 +73,7 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 戻し方: Vercel Deployments で CP1(`foot-guidance-4hzhoafb6`)を Promote、または `git reset --hard 4d90d79`。
 
 ### CP2-fix3 (2026-08-28 A案 Step2: 原因を避けて全画面化を再導入)
-- コミット: `<push後に記録>`
+- コミット: `c136937`("feat: A案 Step2 — 縮小原因を避けてカメラ全画面化を再導入")
 - 前提: CP2-fix2(`f14ed4c`)デプロイ後、冨永社長確認で **A4枠・足型は正しいサイズに戻った**。
   → A4枠が縮んだ主因は私の D 変更(特に `globals.css` の `html, body, #root { height: 100% }`。
      iOS Safari で `html` に明示高さを与えると `position: fixed` の基準高さがツールバー表示時の
