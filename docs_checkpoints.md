@@ -61,7 +61,7 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 戻し方: 同上(CP1 を Promote、または `git reset --hard 032752d`)。
 
 ### CP2-fix2 (2026-08-28 D=全画面化 を全撤回。A4枠がまだ小さい問題の切り分け・A案 Step1)
-- コミット: `<push後に記録>`
+- コミット: `f14ed4c`("revert: D(カメラ全画面化)を全撤回 — A4枠が小さい問題の切り分け(A案 Step1)")
 - 症状(冨永社長報告・スクショ): CP2-fix(`2870d76`)後も iPhone(15 Plus 横向き)で A4 点線枠・足型ガイドが映像幅の 7〜8% しかなく撮影不能。本来は「映像幅の 28%」(`sc = videoRect.width * 0.28 / 297`, `a4W = videoRect.width * 0.28`)。
 - 調査結果: ガイド寸法計算(`CameraView.tsx` の `updateVideoRect` / `videoRect.width * 0.28`)と `<video>` のコンテナ構造(`fixed inset-0 h-[100dvh]` > `w-full h-full object-contain`)は **初回コミット `503e339` から一度も変わっていない**。Vite 移行(`8a03a92`)も CP2 も、この部分の差分ゼロ。
 - 有力仮説(未確定): モバイル Safari で `<video className="w-full h-full">` の `height:100%` が親(`position:fixed` + `inset-0` + `h-[100dvh]`)に対して解決されず、`<video>` が中途半端な高さに潰れて `getBoundingClientRect()` 計測 → ガイド縮小。`503e339` から存在する潜在バグで、FlutterFlow WebView / Manus プレビューでは % 高さが解決されるため表面化せず、CP1(別セッション、`?from=upload-center` 追加)で初めて「普通のモバイル Safari タブ」で開かれて露呈した可能性。
