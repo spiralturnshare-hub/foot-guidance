@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAudio } from "@/hooks/useAudio";
 import { getAssetPath } from "@/lib/basePath";
-import { enterFullscreen } from "@/lib/fullscreen";
 import LevelIndicator/*, { requestLevelPermission }*/ from "./LevelIndicator";
 
 interface CameraViewProps {
@@ -112,25 +111,13 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             setTimeout(updateVideoRect, 100);
         };
 
-        // 全画面の出入りでビューポート寸法が変わる。遷移アニメーション(~300ms)後の
-        // 確定サイズで videoRect を測り直す(遷移中の中途半端な値で固定されるのを防ぐ)。
-        const handleFullscreenChange = () => {
-            updateVideoRect();
-            setTimeout(updateVideoRect, 150);
-            setTimeout(updateVideoRect, 450);
-        };
-
         window.addEventListener("resize", handleResize);
         window.addEventListener("orientationchange", handleResize);
-        document.addEventListener("fullscreenchange", handleFullscreenChange);
-        document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
 
         return () => {
             observer.disconnect();
             window.removeEventListener("resize", handleResize);
             window.removeEventListener("orientationchange", handleResize);
-            document.removeEventListener("fullscreenchange", handleFullscreenChange);
-            document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
         };
     }, [updateVideoRect]);
 
@@ -199,11 +186,6 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     }, []);
 
     const handleNextStep = async () => {
-        // 全画面化の保険。GuidancePage の onComplete でも呼んでいるが、
-        // React の状態更新→再マウントを挟むと稀にユーザー操作の有効化が切れるため、
-        // カメラ画面内の最初のタップでもう一度要求する(既に全画面なら no-op)。
-        void enterFullscreen();
-
         const nextStep = stepIndex + 1;
 
         /*

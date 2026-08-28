@@ -6,7 +6,6 @@ import { uploadImage } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { saveImageToDevice } from "@/lib/saveImage";
 import { annotateImage } from "@/lib/annotateImage";
-import { enterFullscreen, exitFullscreen } from "@/lib/fullscreen";
 
 // 撮影日時を "YYYY-MM-DD HH:mm"(ローカル時刻)で返す
 function formatNow(d: Date): string {
@@ -91,15 +90,6 @@ export default function GuidancePage() {
       }
     })();
   }, [isEmbedded]);
-
-  // カメラ画面を抜けたら全画面/横向きロックを解除する(auth・guidance では no-op)。
-  // アンマウント時(タブが閉じられない直リンク利用など)にも確実に解除する。
-  useEffect(() => {
-    if (mode !== "camera") void exitFullscreen();
-    return () => {
-      void exitFullscreen();
-    };
-  }, [mode]);
 
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,16 +232,7 @@ export default function GuidancePage() {
           </div>
         </div>
       )}
-      {mode === "guidance" && (
-        <StepWizard
-          onComplete={() => {
-            // StepWizard 最後の「カメラ起動」ボタンのタップ延長で全画面化する
-            // (ユーザー操作ハンドラ内でないと requestFullscreen が弾かれるため)。
-            void enterFullscreen();
-            setMode("camera");
-          }}
-        />
-      )}
+      {mode === "guidance" && <StepWizard onComplete={() => setMode("camera")} />}
       {mode === "camera" && <CameraView onCapture={handleCapture} />}
       {capturedBlob && (
         <PreviewModal

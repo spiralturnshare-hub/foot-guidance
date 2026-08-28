@@ -2,41 +2,21 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport-fit=cover: ノッチ端末で画面端まで描画し、全画面時に余白を出さない -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>足計測ガイダンス</title>
     <link rel="icon" href="/favicon.ico" />
-    <!-- PWA: 「ホーム画面に追加」でブラウザUIごと隠して起動する(特に iOS。詳細は src/lib/fullscreen.ts) -->
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="足計測ガイダンス" />
-    <link rel="apple-touch-icon" href="/assets/ashiura.png" />
     <!-- Geist Font via Google Fonts CDN (Next.js next/font/google の代替) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap" rel="stylesheet" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <!--
-      横向き警告オーバーレイ(縦向き時に表示)。
-      表示制御は src/app/globals.css の #landscape-warning / @media (orientation: portrait)。
-      ※ 以前は <head> 内に置かれていた(不正マークアップ)。ブラウザが暗黙で body へ
-        移動していたため動作はしていたが、正しい位置へ修正。
-    -->
-    <div
-      id="landscape-warning"
-      style="display:none; position:fixed; inset:0; background:#000; z-index:99999; flex-direction:column; align-items:center; justify-content:center; color:white; text-align:center; padding:20px;"
-    >
+    <!-- 横向き警告オーバーレイ（縦向き時に表示） -->
+    <div id="landscape-warning" style="display:none; position:fixed; inset:0; background:#000; z-index:99999; flex-direction:column; align-items:center; justify-content:center; color:white; text-align:center; padding:20px;">
       <p style="font-size:1.5rem; font-weight:bold; margin-bottom:1rem;">📱 横向きにしてください</p>
       <p style="font-size:1rem;">このアプリは横向き（ランドスケープ）専用です。</p>
     </div>
+  </head>
+  <body>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
