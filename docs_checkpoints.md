@@ -131,6 +131,29 @@ git push --force-with-lease        # 要事前確認・複数回許可
   確実解は「ホーム画面に追加」(manifest 設置済み)。
 - 戻し方: `git reset --hard c136937`(= CP2-fix3)、または Vercel で CP2-fix3 のデプロイを Promote。
 
+### CP2-fix5 (2026-08-28 全画面OK後も A4枠が小さい問題の本修正: 映像の縦横比取得を堅牢化)
+- コミット: `<push後に記録>`
+- 症状: CP2-fix4 で iPhone の全画面化は成功(スクショで Safari chrome が消えた)。しかし A4枠・
+  足型ガイドがまだ小さい。スクショ上の A4枠サイズ(約145px相当)を逆算すると `videoRect.width`
+  ≈ 240 CSS で計算されている。これは container 926x428 CSS に対し **videoRatio ≈ 0.56(縦向き
+  1080x1920)** で letterbox 計算した場合の値と一致。実際に表示されている映像は横向き 16:9。
+- 原因: iOS Safari は `getUserMedia` 直後に `video.videoWidth/videoHeight` を一時的に「縦向き」
+  (例 1080x1920)で返すことがある。その値で `updateVideoRect()` が走ると縦横比 0.56 でガイドを
+  組み、A4枠が約 1/3 サイズになる。その後映像が横向き 16:9 に確定しても、再計算のトリガーが
+  無いため小さいまま固定される。
+- 修正(`src/components/Camera/CameraView.tsx`):
+  - `updateVideoRect()`: `videoRatio < 1`(縦比)や異常値は誤りとみなし **16/9 にフォールバック**。
+    正しい横向き値が来たらそれを使う。このアプリは横向き専用なので縦比は必ず誤り。
+  - `<video>` の `resize`/`playing`/`loadeddata` を再計測トリガーに追加(videoWidth 確定時に発火)。
+  - 起動後 ~3秒間 `requestAnimationFrame` で毎フレーム測り直す settle ループ + 1.2/1.8/2.6/4.0秒の
+    遅延再計測を追加。映像寸法確定・カメラ権限ダイアログ・iOS ツールバー格納 が非同期に
+    起きるため、確定値に収束させる。
+  - `?debug=1` で計測値(visualViewport / innerW×H / screen / videoW×H / videoRect / fullscreen)を
+    画面左上に表示するデバッグオーバーレイを追加(通常運用では非表示)。まだ小さい場合はこの値を
+    スクショしてもらえば原因が即わかる。
+- globals.css / index.html / GuidancePage.tsx: CP2-fix4 のまま変更なし。
+- 戻し方: `git reset --hard d40fbee`(= CP2-fix4)。
+
 ---
 
 ## DB migration 010(RLS 硬化)適用 2026-08-28 — コード変更なし

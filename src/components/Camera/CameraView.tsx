@@ -65,6 +65,8 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     const _searchParams = new URLSearchParams(window.location.search);
     const orderId = _searchParams.get("orderid") || "";
     const name = _searchParams.get("name") || "";
+    // ?debug=1 で計測値を画面に出す(不具合切り分け用。通常運用では出ない)
+    const showDebug = _searchParams.get("debug") === "1";
 
     const updateVideoRect = useCallback(() => {
         const video = videoRef.current;
@@ -83,10 +85,18 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         const vv = window.visualViewport;
         const containerWidth = vv?.width ?? window.innerWidth;
         const containerHeight = vv?.height ?? window.innerHeight;
-        const videoRatio = video.videoWidth / video.videoHeight;
-        const containerRatio = containerWidth / containerHeight;
-
         if (containerWidth === 0 || containerHeight === 0) return;
+
+        // 【核心 (2026-08-28)】このアプリは横向き専用。iOS Safari は getUserMedia 直後に
+        //  一時的に縦向きの videoWidth/videoHeight(例 1080x1920, 比 0.56)を返すことがあり、
+        //  その比でガイドを組むと A4枠・足型が 1/3 サイズになる(冨永社長スクショで確認)。
+        //  縦比(<1)や異常値は誤りとみなし、横向き 16:9 として扱う。正しい横向き値が来たら
+        //  それを使う(video の resize イベントで再計算される)。
+        let videoRatio = video.videoWidth / video.videoHeight;
+        if (!isFinite(videoRatio) || videoRatio < 1) {
+            videoRatio = 16 / 9;
+        }
+        const containerRatio = containerWidth / containerHeight;
 
         let width, height, top, left;
 
@@ -113,7 +123,6 @@ export default function CameraView({ onCapture }: CameraViewProps) {
 
         const observer = new ResizeObserver(() => {
             updateVideoRect();
-            // Handle browser reflow delay
             setTimeout(updateVideoRect, 100);
         });
         observer.observe(video);
@@ -123,8 +132,6 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             setTimeout(updateVideoRect, 100);
         };
 
-        // 全画面の出入り・iOS Safari のツールバー開閉後にビューポート実寸が変わる。
-        // 複数回のディレイ付きで測り直し、確定値に収束させる。
         const remeasureWithDelays = () => {
             updateVideoRect();
             [150, 400, 800].forEach((ms) => setTimeout(updateVideoRect, ms));
@@ -134,21 +141,46 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         window.addEventListener("orientationchange", handleResize);
         document.addEventListener("fullscreenchange", remeasureWithDelays);
         document.addEventListener("webkitfullscreenchange", remeasureWithDelays);
-        // iOS Safari: ツールバー/タブ帯の開閉は visualViewport の resize/scroll で通知される
         window.visualViewport?.addEventListener("resize", handleResize);
         window.visualViewport?.addEventListener("scroll", handleResize);
+        // 【核心 (2026-08-28)】<video> の resize は videoWidth/videoHeight が変わった時に発火する。
+        //  iOS Safari は getUserMedia 直後に一時的に縦向き(例 1080x1920)の寸法を返し、その後
+        //  横向き 16:9 に確定することがある。最初の loadedmetadata の値でガイドを組むと縦横比が
+        //  ずれて A4枠・足型が極端に小さくなる(冨永社長報告)。resize/playing/loadeddata で
+        //  必ず測り直す。
+        video.addEventListener("resize", handleResize);
+        video.addEventListener("playing", handleResize);
+        video.addEventListener("loadeddata", handleResize);
 
-        // 初期描画直後にも数回測り直す(カメラ権限ダイアログ・ツールバー確定待ち)
+        // 起動直後の ~3秒間、毎フレーム測り直して確定値に収束させる
+        // (映像寸法の確定・カメラ権限ダイアログ・iOS ツールバー格納 が非同期に起きるため)。
+        let rafId = 0;
+        const settleUntil = performance.now() + 3000;
+        const settleLoop = () => {
+            updateVideoRect();
+            if (performance.now() < settleUntil) {
+                rafId = requestAnimationFrame(settleLoop);
+            }
+        };
+        rafId = requestAnimationFrame(settleLoop);
+
         remeasureWithDelays();
+        // 遅めのタイミングでも一応叩く
+        const lateTimers = [1200, 1800, 2600, 4000].map((ms) => setTimeout(updateVideoRect, ms));
 
         return () => {
             observer.disconnect();
+            cancelAnimationFrame(rafId);
+            lateTimers.forEach(clearTimeout);
             window.removeEventListener("resize", handleResize);
             window.removeEventListener("orientationchange", handleResize);
             document.removeEventListener("fullscreenchange", remeasureWithDelays);
             document.removeEventListener("webkitfullscreenchange", remeasureWithDelays);
             window.visualViewport?.removeEventListener("resize", handleResize);
             window.visualViewport?.removeEventListener("scroll", handleResize);
+            video.removeEventListener("resize", handleResize);
+            video.removeEventListener("playing", handleResize);
+            video.removeEventListener("loadeddata", handleResize);
         };
     }, [updateVideoRect]);
 
@@ -344,6 +376,23 @@ export default function CameraView({ onCapture }: CameraViewProps) {
 
     return (
         <div ref={rootRef} className="fixed inset-0 h-[100dvh] overflow-hidden bg-black touch-none">
+            {showDebug && (
+                <div
+                    style={{
+                        position: "fixed", left: 0, top: 0, zIndex: 9999,
+                        background: "rgba(0,0,0,0.75)", color: "#0f0",
+                        font: "11px/1.35 monospace", padding: "4px 6px",
+                        whiteSpace: "pre", pointerEvents: "none",
+                    }}
+                >
+                    {`vv    = ${Math.round(window.visualViewport?.width || 0)} x ${Math.round(window.visualViewport?.height || 0)}\n` +
+                     `inner = ${window.innerWidth} x ${window.innerHeight}\n` +
+                     `screen= ${window.screen.width} x ${window.screen.height}\n` +
+                     `video = ${videoRef.current?.videoWidth || 0} x ${videoRef.current?.videoHeight || 0}\n` +
+                     `rect  = ${Math.round(videoRect.width)} x ${Math.round(videoRect.height)}  L${Math.round(videoRect.left)} T${Math.round(videoRect.top)}\n` +
+                     `fs    = ${!!document.fullscreenElement}  dpr=${window.devicePixelRatio}`}
+                </div>
+            )}
             {/* Landscape Warning Overlay */}
             <div id="landscape-warning" className="pointer-events-auto">
                 <div className="flex flex-col items-center gap-4">
