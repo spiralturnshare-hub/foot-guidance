@@ -61,7 +61,9 @@ export async function uploadImage(
             .from('uploads_files')
             .insert({
                 id: uploadFileId,
-                order_id: orderId,
+                // orderId が空文字のことがある(ゲスト/未決済フローで upload-center から
+                // orderid 未指定で開かれるケース)。uuid 列へ '' を入れると失敗するため null 化する。
+                order_id: orderId || null,
                 upload_id: uploadId,
                 user_id: userId,
                 status: 'draft',

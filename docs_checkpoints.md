@@ -38,3 +38,13 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - 既知の割り切り(MVP): 再撮影時の旧 foot 行 `is_current=false` 化はしない(新規行を足すのみ)。靴・動画・厚紙A4モードは将来(docs/12)。
 - ⚠️ セキュリティ: `uploads_files`/`upsys` の INSERT が anon でも `check: true` で通る緩い状態。Blue 本番昇格前に自分の upload_id/user_id に限定する形へ要修正(docs 記録済み)。
 - 戻し方: Vercel Deployments で CP0(`foot-guidance-ojeetqx4l`)を Promote to Production。
+
+### CP2 (2026-08-28 upload-center連携の3不具合修正 着手前)
+- コミット: `4d90d79`("docs: CP1のhash/デプロイ先を確定")
+- Vercel Production: CP1と同じ(`foot-guidance-4hzhoafb6` / 公開URL `https://foot-guidance.vercel.app`)
+- この作業着手時点のベースライン。冨永社長からの指示で以下3点を修正する(別セッションが customer-mgmt-console を並行修正中。本作業は foot-guidance のクライアントコードのみで完結し、DBスキーマ変更・マイグレーションは行わない。`production_workflows`/`foot_measurements`/改訂履歴RPC には触れない):
+  - **A. 顧客ID要求画面が最初に出る**: `GuidancePage.tsx` の初期モード判定が `isFromUploadCenter && !!orderId && !!uploadId` で、orderId 未設定(ゲスト/未決済フロー)だと auth 入力フォームが表示されてしまう。`uploadId` があれば撮影ガイダンスへ直行するよう緩和する。
+  - **B. 自動アップロードされない**: `src/lib/supabase.ts` が `import.meta.env.VITE_SUPABASE_*` のフォールバック無し(`|| ''`)。Vercel env 未設定だと全アップロードが即失敗する。foot-measure と同様に Green の URL/anon key を定数フォールバックとして持たせる。あわせてセッション復元を await 化し、失敗理由を画面に具体表示する。
+  - **C. 撮影端末にダウンロードされない**: `saveImageToDevice` の `<a download>` 方式は iOS Safari が無視し、直後の `window.close()` と競合する。モバイルは `navigator.share({files})` に切替、非対応/PCは従来方式。保存完了を待ってから閉じる。
+  - **D. カメラ全画面化**: Fullscreen API + `screen.orientation.lock('landscape')` + `viewport-fit=cover`/`100dvh` + PWA manifest。A4枠・足型・案内文字のオーバーレイは現状の `videoRect` 基準描画のまま完全維持。
+- 戻し方: Vercel Deployments で CP1(`foot-guidance-4hzhoafb6`)を Promote to Production。

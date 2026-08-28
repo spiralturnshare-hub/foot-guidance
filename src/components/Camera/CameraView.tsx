@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAudio } from "@/hooks/useAudio";
 import { getAssetPath } from "@/lib/basePath";
+import { enterFullscreen } from "@/lib/fullscreen";
 import LevelIndicator/*, { requestLevelPermission }*/ from "./LevelIndicator";
 
 interface CameraViewProps {
@@ -186,6 +187,11 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     }, []);
 
     const handleNextStep = async () => {
+        // 全画面化の保険。GuidancePage の onComplete でも呼んでいるが、
+        // React の状態更新→再マウントを挟むと稀にユーザー操作の有効化が切れるため、
+        // カメラ画面内の最初のタップでもう一度要求する(既に全画面なら no-op)。
+        void enterFullscreen();
+
         const nextStep = stepIndex + 1;
 
         /*
