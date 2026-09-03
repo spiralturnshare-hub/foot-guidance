@@ -163,3 +163,12 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - `uploads_files` / Storage `upsys` の緩い INSERT(`true` / anon)を全削除。foot-guidance は upload-center から `postMessage` でセッション注入 = **authenticated**。撮影画像の書き込みは `uploads_files_insert_own`(`upload_id → uploads.user_id → users.auth_user_id = auth.uid()`)と `allow authenticated upload to upsys` を通る。
 - 注入されたセッションが正しく `authenticated` になっていること、対象 `upload_id` の `uploads.user_id` が撮影者本人の `users.id` であることが前提。どちらか外れると書き込みが RLS で弾かれる。
 - 実機確認(未): upload-center から起動 → 撮影 → upload-center に戻ってファイルが反映されるか。壊れたら 010 末尾のロールバック SQL。
+
+---
+
+## 2026-09-04: Legacy anon JWT → 新 publishable キー(docs/35 WS-B / docs/36)
+
+- 変更前 HEAD: `a48d38e` / Vercel Production: https://foot-guidance.vercel.app
+- `src/lib/supabase.ts`: ハードコード fallback(旧 anon JWT)を撤去 → env 必須(未設定なら throw)
+- Vercel env `VITE_SUPABASE_ANON_KEY` を `sb_publishable_...` に差し替え(Production / Preview / Development)
+- 巻き戻し: この commit を revert + Vercel env を旧 anon JWT に戻す(値は .env の SUPABASE_GREEN_ANON_KEY / パスワードマネージャ)
