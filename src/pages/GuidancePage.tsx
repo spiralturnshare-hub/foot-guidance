@@ -33,22 +33,35 @@ export default function GuidancePage() {
   // auth 画面(オーダーID+名前の手入力フォーム)を出すかどうかの判定。
   // ここで "guidance" を初期値にできれば、顧客に情報を打たせず撮影ガイダンスへ直行する。
   //  - FF WebView 経由(from=ff): 常にスキップ。FF 側が顧客コンテキストを保証する。
-  //  - upload-center 経由(from=upload-center): uploadId さえ渡っていればスキップする。
+  //  - upload-center 経由(from=upload-center): uploadId さえ渡っていれば「confirm-user」
+  //    (インソール利用者名の確認画面)へ進む(下記 insoleUserName 取得 useEffect 参照)。
   //    【過去の失敗と対策 (2026-08-28)】以前は orderId も必須(&& !!orderId)にしていたため、
   //    ゲスト/未決済フローで upload-center 側の orderId が空のとき、顧客に不要な
   //    「オーダーID入力画面」が表示されていた。アップロードは uploadId さえあれば
   //    api.ts 側で完結でき、画像に焼き込むラベルは orderLabel(= ordername || orderid ||
   //    "(不明)") 側で吸収するため、orderId 必須条件を外す。
   //  - どちらでもない直リンク: 従来どおり orderid & name が URL にあればスキップ。
-  const [mode, setMode] = useState<"auth" | "guidance" | "camera">(
-    isFromFF || (isFromUploadCenter && !!uploadId)
+  type Mode = "auth" | "confirm-user" | "guidance" | "camera";
+  const [mode, setMode] = useState<Mode>(
+    isFromFF
       ? "guidance"
-      : (searchParams.get("orderid") && searchParams.get("name"))
-        ? "guidance"
-        : "auth"
+      : (isFromUploadCenter && !!uploadId)
+        ? "confirm-user"
+        : (searchParams.get("orderid") && searchParams.get("name"))
+          ? "guidance"
+          : "auth"
   );
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // インソール利用者名(uploads.insole_user_name = 発注時に登録された「何様の」インソールか)。
+  //   【なぜ必要か (2026-09-05 冨永社長指示)】操作している人(注文者)と、実際に足を撮影される人
+  //   (家族分の代理注文等)が別人のケースがある。撮影前に「◯◯様の撮影で間違いないか」を
+  //   明示確認させることで取り違えを防ぐ。あわせて画像にも焼き込み、A4紙にお客様自身の手で
+  //   名前を書いてもらう従来運用(顔が映らない足だけの写真では誰の撮影か分からないための代替
+  //   手段だった)を不要にする。
+  const [insoleUserName, setInsoleUserName] = useState<string | null>(null);
+  const [nameFetchDone, setNameFetchDone] = useState(false);
 
   // 焼き込み済み(注文番号・撮影日時をピクセル化した)画像と保存ファイル名。
   // 撮影確定(handleCapture)の時点で用意しておく。
@@ -91,6 +104,41 @@ export default function GuidancePage() {
     })();
   }, [isEmbedded]);
 
+  // upload-center 経由(uploadId あり)のとき、insole_user_name を取得して
+  // 「◯◯様の撮影で間違いないか」の確認画面(confirm-user)に表示する。
+  //   セッション復元(上記 useEffect)が先に走るため、そのPromiseを待ってから読む。
+  useEffect(() => {
+    if (!(isFromUploadCenter && uploadId)) {
+      setNameFetchDone(true);
+      return;
+    }
+    (async () => {
+      try {
+        if (sessionRestoreRef.current) await sessionRestoreRef.current;
+        const { data, error } = await supabase
+          .from("uploads")
+          .select("insole_user_name")
+          .eq("id", uploadId)
+          .maybeSingle();
+        if (!error && data?.insole_user_name) {
+          setInsoleUserName(data.insole_user_name as string);
+        }
+      } catch (e) {
+        console.warn("insole_user_name 取得失敗(確認画面は名前無しにフォールバック):", e);
+      } finally {
+        setNameFetchDone(true);
+      }
+    })();
+  }, [isFromUploadCenter, uploadId]);
+
+  // 名前が取得できなかった(取得失敗 or 未登録)場合は確認画面を出さずそのまま撮影へ進む
+  // (確認する対象が無いため)。
+  useEffect(() => {
+    if (mode === "confirm-user" && nameFetchDone && !insoleUserName) {
+      setMode("guidance");
+    }
+  }, [mode, nameFetchDone, insoleUserName]);
+
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (orderId && userName) {
@@ -100,6 +148,16 @@ export default function GuidancePage() {
     }
   };
 
+  // 画像の下部に焼き込む行(注文番号・お名前・撮影日時)。
+  //   お名前は uploads.insole_user_name(confirm-user で確認済みの「何様の」インソールか)。
+  //   顔が映らない足だけの写真では誰の撮影か分からないため、A4紙に手書きしてもらっていた
+  //   名前をここで自動的に代替する(2026-09-05 冨永社長指示)。
+  const annotationLines = (now: Date) => [
+    `注文番号: ${orderLabel || "(不明)"}`,
+    insoleUserName ? `お名前: ${insoleUserName} 様` : null,
+    `撮影日時: ${formatNow(now)}`,
+  ].filter((l): l is string => !!l);
+
   const handleCapture = async (blob: Blob) => {
     setCapturedBlob(blob);
     // 撮影時刻でファイル名を確定し、焼き込みもこの場で済ませておく。
@@ -108,10 +166,7 @@ export default function GuidancePage() {
     const labelForName = (orderLabel || "foot").replace(/[^\w.\-]/g, "_");
     const filename = `foot_${labelForName}_${timestamp}.jpg`;
     try {
-      const annotated = await annotateImage(blob, [
-        `注文番号: ${orderLabel || "(不明)"}`,
-        `撮影日時: ${formatNow(now)}`,
-      ]);
+      const annotated = await annotateImage(blob, annotationLines(now));
       annotatedRef.current = { blob: annotated, filename };
     } catch (e) {
       // 焼き込み失敗時は元画像で続行(annotateImage の従来仕様と同じ割り切り)
@@ -135,33 +190,24 @@ export default function GuidancePage() {
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const labelForName = (orderLabel || "foot").replace(/[^\w.\-]/g, "_");
         const filename = `foot_${labelForName}_${timestamp}.jpg`;
-        const annotated = await annotateImage(capturedBlob, [
-          `注文番号: ${orderLabel || "(不明)"}`,
-          `撮影日時: ${formatNow(now)}`,
-        ]).catch(() => capturedBlob);
+        const annotated = await annotateImage(capturedBlob, annotationLines(now)).catch(() => capturedBlob);
         payload = { blob: annotated, filename };
       }
       const { blob: annotated, filename } = payload;
 
-      // 端末保存(モバイル=OS共有シート / それ以外=ダウンロード)。
-      // navigator.share はユーザー操作直後でないと弾かれるため、これを最初の await にする。
-      const saveResult = await saveImageToDevice(annotated, filename);
-      const savedNote =
-        saveResult === "shared" || saveResult === "downloaded"
-          ? "端末にも画像を保存しました。"
-          : saveResult === "cancelled"
-            ? "※端末への保存はキャンセルされました。"
-            : "※端末への保存に失敗しました。";
-
       if (isEmbedded) {
-        // Green Storage / uploads_files へアップロード
+        // upload-center / FF に埋め込まれている場合は Green Storage / uploads_files への
+        // アップロードのみを行い、自動で呼び出し元へ戻る。
+        //   【2026-09-05 変更】以前はここで端末保存(navigator.share の OS 共有シート)を
+        //   先に挟んでいたが、共有シートが「別の画面に遷移した」ように見えてお客様が
+        //   混乱するとの指摘(冨永社長)。埋め込みモードでは Green への保存が主目的であり、
+        //   端末保存は不要なので撤去し、撮影→送信→自動で upload-center に戻る、を直結させる。
         // セッション復元が進行中なら完了を待ってから送信する(未認証での空振り防止)
         if (sessionRestoreRef.current) {
           await sessionRestoreRef.current;
         }
         const res = await uploadImage(annotated, orderId, uploadId, userId, filename);
         if (res.success) {
-          alert(`画像をアップロードしました。${savedNote}`);
           if (isFromFF && (window as any).ff_webview_handler) {
             (window as any).ff_webview_handler.postMessage(
               JSON.stringify({ success: true, message: "upload complete" })
@@ -172,12 +218,23 @@ export default function GuidancePage() {
               { source: "foot-guidance", status: "uploaded", uploadId, orderId, kind: "foot" },
               returnOrigin || "*"
             );
+            // upload-center 側の一覧にすぐ反映されるよう一拍おいてから閉じる
+            setTimeout(() => window.close(), 300);
+          } else {
+            window.close();
           }
-          window.close();
         } else {
           alert(`アップロードに失敗しました: ${res.message}`);
         }
       } else {
+        // 埋め込みでない直リンク利用時は従来どおり端末保存のみ(サーバーへは送らない)。
+        const saveResult = await saveImageToDevice(annotated, filename);
+        const savedNote =
+          saveResult === "shared" || saveResult === "downloaded"
+            ? "端末に画像を保存しました。"
+            : saveResult === "cancelled"
+              ? "※端末への保存はキャンセルされました。"
+              : "※端末への保存に失敗しました。";
         alert(saveResult === "failed" ? "端末への保存に失敗しました。" : savedNote);
         window.close();
       }
@@ -229,6 +286,34 @@ export default function GuidancePage() {
                 計測を開始する
               </button>
             </form>
+          </div>
+        </div>
+      )}
+      {mode === "confirm-user" && (
+        <div className="flex flex-col items-center justify-center min-h-screen p-6">
+          <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-md text-center">
+            {!nameFetchDone ? (
+              <p className="text-sm text-gray-500">読み込み中…</p>
+            ) : (
+              <>
+                <h1 className="text-lg font-bold text-gray-800 mb-3">撮影する方の確認</h1>
+                <p className="text-sm text-gray-600 mb-2">これから撮影するのは</p>
+                <p className="text-2xl font-bold mb-2" style={{ color: "#2563EB" }}>
+                  {insoleUserName} 様
+                </p>
+                <p className="text-sm text-gray-600 mb-6">の足で間違いありませんか？</p>
+                <button
+                  type="button"
+                  onClick={() => setMode("guidance")}
+                  className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition"
+                >
+                  はい、間違いありません
+                </button>
+                <p className="text-xs text-gray-400 mt-4">
+                  ご注文者様と撮影される方が異なる場合(ご家族分のご注文など)、必ずこの方の足を撮影してください。
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
