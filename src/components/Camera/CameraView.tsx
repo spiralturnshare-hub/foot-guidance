@@ -224,14 +224,16 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             }
 
             try {
-                // 【2026-09-05 冨永社長指示】計測誤差を減らすため、端末が対応する最高解像度で
-                // 撮影する(4K を ideal として要求。getUserMedia の ideal は「対応していれば使う」
-                // 制約なので、非対応の端末は自動的に出せる最大解像度にフォールバックする)。
+                // 【2026-09-05 冨永社長指示】フルHD(1920x1080)で撮影する。
+                //   一時的に 4K ideal を試したが、アップロード時間・Storage 消費に対して
+                //   過剰(この用途の計測精度にはフルHDで十分)なため撤回。
+                //   低すぎる解像度も問題なので、「普通の解像度」としてフルHDを採用する
+                //   (ほぼ全てのスマホが標準対応・getUserMedia の ideal で確実に得られる)。
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: { exact: "environment" },
-                        width: { ideal: 3840 },
-                        height: { ideal: 2160 },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
                     },
                 });
                 if (videoRef.current && active) {
