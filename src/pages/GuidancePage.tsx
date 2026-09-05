@@ -58,6 +58,8 @@ export default function GuidancePage() {
   //   埋め込みモードでも端末保存を選べるようにする(自動では保存しない。任意)。
   const [pendingSave, setPendingSave] = useState<{ blob: Blob; filename: string } | null>(null);
   const [savingToDevice, setSavingToDevice] = useState(false);
+  // window.close() が効かなかった場合(iOS Safari 等)に手動で閉じてもらう案内を出すためのフラグ
+  const [showCloseFallback, setShowCloseFallback] = useState(false);
 
   // インソール利用者名(uploads.insole_user_name = 発注時に登録された「何様の」インソールか)。
   //   【なぜ必要か (2026-09-05 冨永社長指示)】操作している人(注文者)と、実際に足を撮影される人
@@ -260,11 +262,20 @@ export default function GuidancePage() {
     }
   };
 
+  // window.close() は iOS Safari 等で「ユーザー操作から時間が経つ・共有シート等の
+  // 別UIを経由した」場合に無視されることがある(ブラウザの仕様。呼び出し側では検知不能)。
+  //   【2026-09-05 冨永社長報告】「端末に保存しますか」で「はい」を選んだ後、閉じずに
+  //   画面が残るケースがあった。閉じなかった場合に備え、手動で閉じる案内を必ず表示する。
+  const closeOrShowFallback = () => {
+    window.close();
+    setTimeout(() => setShowCloseFallback(true), 400);
+  };
+
   // 「端末にも保存しますか?」への回答(ask-save)。
   //   「はい」ボタンの click ハンドラの中で saveImageToDevice を直接呼ぶことで、
   //   navigator.share に必要なユーザー操作の有効化(user activation)を保つ。
   const handleSaveYes = async () => {
-    if (!pendingSave) { window.close(); return; }
+    if (!pendingSave) { closeOrShowFallback(); return; }
     setSavingToDevice(true);
     try {
       await saveImageToDevice(pendingSave.blob, pendingSave.filename);
@@ -272,11 +283,11 @@ export default function GuidancePage() {
       console.warn("端末保存に失敗:", e);
     } finally {
       setSavingToDevice(false);
-      window.close();
+      closeOrShowFallback();
     }
   };
   const handleSaveNo = () => {
-    window.close();
+    closeOrShowFallback();
   };
 
   return (
@@ -341,33 +352,45 @@ export default function GuidancePage() {
       {mode === "ask-save" && (
         <div className="flex flex-col items-center justify-center min-h-screen p-6">
           <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-md text-center">
-            <h1 className="text-lg font-bold text-gray-800 mb-3">端末にも保存しますか？</h1>
-            <p className="text-sm text-gray-600 mb-6">
-              アップロードは完了しました。この端末にも画像を保存しておくと、後で見返すことができます。
-            </p>
-            {isIOS() && (
-              <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ color: "#2563EB", backgroundColor: "#DBEAFE" }}>
-                「はい」を選ぶと次に共有画面が開きます。そこで「画像を保存」を選んでください。
-              </p>
+            {showCloseFallback ? (
+              <>
+                <h1 className="text-lg font-bold text-gray-800 mb-3">この画面を閉じてください</h1>
+                <p className="text-sm text-gray-600">
+                  アップロードは完了しています。ブラウザの操作でこのタブ/画面を閉じると、
+                  元のアップロードセンターの画面に戻ります。
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-lg font-bold text-gray-800 mb-3">端末にも保存しますか？</h1>
+                <p className="text-sm text-gray-600 mb-6">
+                  アップロードは完了しました。この端末にも画像を保存しておくと、後で見返すことができます。
+                </p>
+                {isIOS() && (
+                  <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ color: "#2563EB", backgroundColor: "#DBEAFE" }}>
+                    「はい」を選ぶと次に共有画面が開きます。そこで「画像を保存」を選んでください。
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveNo}
+                    disabled={savingToDevice}
+                    className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition disabled:opacity-50"
+                  >
+                    いいえ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveYes}
+                    disabled={savingToDevice}
+                    className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
+                  >
+                    {savingToDevice ? "保存中…" : "はい、保存する"}
+                  </button>
+                </div>
+              </>
             )}
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={handleSaveNo}
-                disabled={savingToDevice}
-                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition disabled:opacity-50"
-              >
-                いいえ
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveYes}
-                disabled={savingToDevice}
-                className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
-              >
-                {savingToDevice ? "保存中…" : "はい、保存する"}
-              </button>
-            </div>
           </div>
         </div>
       )}

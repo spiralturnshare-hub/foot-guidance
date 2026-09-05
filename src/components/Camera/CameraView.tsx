@@ -63,8 +63,6 @@ export default function CameraView({ onCapture }: CameraViewProps) {
     const [videoRect, setVideoRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
     const { play } = useAudio();
     const _searchParams = new URLSearchParams(window.location.search);
-    const orderId = _searchParams.get("orderid") || "";
-    const name = _searchParams.get("name") || "";
     // ?debug=1 で計測値を画面に出す(不具合切り分け用。通常運用では出ない)
     const showDebug = _searchParams.get("debug") === "1";
 
@@ -226,11 +224,14 @@ export default function CameraView({ onCapture }: CameraViewProps) {
             }
 
             try {
+                // 【2026-09-05 冨永社長指示】計測誤差を減らすため、端末が対応する最高解像度で
+                // 撮影する(4K を ideal として要求。getUserMedia の ideal は「対応していれば使う」
+                // 制約なので、非対応の端末は自動的に出せる最大解像度にフォールバックする)。
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: { exact: "environment" },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
+                        width: { ideal: 3840 },
+                        height: { ideal: 2160 },
                     },
                 });
                 if (videoRef.current && active) {
@@ -319,57 +320,30 @@ export default function CameraView({ onCapture }: CameraViewProps) {
         }
 
         // Capture logic
+        //   【2026-09-05 修正(冨永社長報告): ダウンロード画像が非常に粗い】
+        //   従来は canvas を「画面上の表示サイズ(videoRect、CSSピクセル)× devicePixelRatio」
+        //   で作成し、そこへ video を描画していた。これは実際のカメラ解像度(getUserMedia の
+        //   1920x1080〜4K)を無視し、スマホの画面サイズ相当まで縮小してから保存していたのが
+        //   「粗い画像」の直接の原因。計測精度には解像度が重要なため、canvas を
+        //   video.videoWidth/videoHeight(カメラの実解像度)で作成し、そのまま等倍で描画する。
+        //   注文番号・お名前・撮影日時の焼き込みは GuidancePage.tsx の annotateImage() が
+        //   一元的に行う(このコンポーネントで別途 fillText していた赤文字は重複・情報不整合
+        //   だったため削除)。
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
             const context = canvas.getContext("2d");
 
-            if (context) {
-                const videoRatio = video.videoWidth / video.videoHeight;
-                const elementRatio = video.clientWidth / video.clientHeight;
+            if (context && video.videoWidth > 0 && video.videoHeight > 0) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
 
-                let drawWidth = video.videoWidth;
-                let drawHeight = video.videoHeight;
-                let offsetX = 0;
-                let offsetY = 0;
-
-                if (videoRatio > elementRatio) {
-                    drawHeight = video.videoHeight;
-                    drawWidth = drawHeight * elementRatio;
-                    offsetX = (video.videoWidth - drawWidth) / 2;
-                } else {
-                    drawWidth = video.videoWidth;
-                    drawHeight = drawWidth / elementRatio;
-                    offsetY = (video.videoHeight - drawHeight) / 2;
-                }
-
-                const dpr = window.devicePixelRatio || 1;
-                const cssWidth = videoRect.width;
-                const cssHeight = videoRect.height;
-
-                canvas.width = cssWidth * dpr;
-                canvas.height = cssHeight * dpr;
-
-                context.scale(dpr, dpr);
-
-                // Draw the visible portion of the video (which is the whole video in object-contain)
-                // into the canvas at CSS coordinate scale
-                context.drawImage(video, 0, 0, cssWidth, cssHeight);
-
-                context.font = "15px Arial";
-                context.fillStyle = "red";
-
-                const today = new Date();
-                const dateString = `${today.getFullYear()}/${String(
-                    today.getMonth() + 1
-                ).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}`;
-
-                context.fillText("time: " + dateString, 10, 20);
-                context.fillText(`orderID: ${orderId} name: ${name}`, 10, 40);
-
+                // JPEG で書き出す(この後 annotateImage() が再度 JPEG に変換するため、
+                // PNG を経由すると 4K フレームで無駄にメモリ・処理時間を消費する)。
                 canvas.toBlob((blob: Blob | null) => {
                     if (blob) onCapture(blob);
-                }, "image/png");
+                }, "image/jpeg", 0.95);
             }
         }
     };
