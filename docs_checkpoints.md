@@ -172,3 +172,15 @@ git push --force-with-lease        # 要事前確認・複数回許可
 - `src/lib/supabase.ts`: ハードコード fallback(旧 anon JWT)を撤去 → env 必須(未設定なら throw)
 - Vercel env `VITE_SUPABASE_ANON_KEY` を `sb_publishable_...` に差し替え(Production / Preview / Development)
 - 巻き戻し: この commit を revert + Vercel env を旧 anon JWT に戻す(値は .env の SUPABASE_GREEN_ANON_KEY / パスワードマネージャ)
+
+## 2026-09-05: uploads_files / uploads の user_id に auth.uid() を入れていたバグを修正(実機E2E未検証だった原因と推定)
+
+- 変更前 HEAD: `e1d0954` / Vercel Production: https://foot-guidance.vercel.app
+- 症状(推定): upload-center からの起動→撮影→アップロードの完全E2Eが 2026-08-28 以降ずっと「未確認」のまま残っていた(`docs_checkpoints.md` 2026-08-28 CP2 節)。
+- 原因: `src/lib/api.ts` の `uploadImage()` が `supabase.auth.getUser()` の `user.id`(= `auth.uid()`)を、そのまま `uploads_files.user_id`(FK先 = `public.users.id`)へ INSERT していた。両者は別のUUIDのため FK 違反で INSERT が必ず失敗する構造だった(upload-center の `insertUploadFile` は同じ理由で `user_id: null` に固定しており、foot-guidance だけこの対策が漏れていた)。`uploads` テーブルへのフォールバック検索(`uploadId` 未指定時)も同根の `user_id` 誤りがあった。
+- 修正:
+  - `uploads_files` への INSERT は `user_id: null` に統一(親 `uploads` 行が正しい `user_id` を保持済み・RLS も許容)。
+  - `uploads` フォールバック検索は `auth_user_id` 経由で `public.users.id` を解決してから `.eq('user_id', ...)` するよう修正。
+- ビルド OK(`npm run build`)。DB migration 不要(既存スキーマのまま)。
+- **未検証(実機)**: この修正後の upload-center → foot-guidance → 撮影 → アップロード → upload-center 復帰の完全E2Eは、実機での確認が必要(カメラ・音声はヘッドレス環境で検証不可)。
+- 戻し方: `git revert` でこのコミットを打ち消す。

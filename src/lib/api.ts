@@ -27,16 +27,27 @@ export async function uploadImage(
         let uploadId = providedUploadId;
 
         if (!uploadId) {
+            // uploads.user_id も public.users.id(auth.uid() ではない)。auth_user_id 経由で解決する
+            // (2026-09-05 発見・修正。uploads_files.user_id と同根のバグ)。
+            const { data: customerRow, error: customerError } = await supabase
+                .from('users')
+                .select('id')
+                .eq('auth_user_id', userId)
+                .maybeSingle();
+            if (customerError || !customerRow) {
+                console.error("public.users 解決エラー:", customerError);
+                return { success: false, message: "Failed to resolve customer record for this user." };
+            }
             // 作成済みの order_id と user_id に紐づく uploads レコードの id を使用する
             const { data: uploadRecord, error: uploadError } = await supabase
                 .from('uploads')
                 .select('id')
                 .eq('order_id', orderId)
-                .eq('user_id', userId)
+                .eq('user_id', customerRow.id)
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
-                
+
             if (uploadError || !uploadRecord) {
                  console.error("uploads table select error or not found:", uploadError);
                  return { success: false, message: "Failed to find existing upload record for this orderId and userId." };
@@ -57,6 +68,11 @@ export async function uploadImage(
         }
 
         // DB へのアップロード情報保存
+        //   uploads_files.user_id は public.users.id への FK(auth.uid() ではない)。
+        //   ここまでの userId は supabase.auth.getUser() の user.id = auth.uid() であり、
+        //   public.users.id と一致しないため、そのまま入れると FK 違反で INSERT が必ず失敗する
+        //   (upload-center の insertUploadFile も同じ理由で user_id: null に固定している。
+        //    2026-09-05 発見・修正: 親 uploads 行が正しい user_id を保持しているので null で良い)。
         const { error: dbError } = await supabase
             .from('uploads_files')
             .insert({
@@ -65,7 +81,7 @@ export async function uploadImage(
                 // orderid 未指定で開かれるケース)。uuid 列へ '' を入れると失敗するため null 化する。
                 order_id: orderId || null,
                 upload_id: uploadId,
-                user_id: userId,
+                user_id: null,
                 status: 'draft',
                 file_type: 'image',
                 kind: kind,
