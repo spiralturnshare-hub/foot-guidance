@@ -4,7 +4,7 @@ import CameraView from "@/components/Camera/CameraView";
 import PreviewModal from "@/components/Review/PreviewModal";
 import { uploadImage } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
-import { saveImageToDevice } from "@/lib/saveImage";
+import { saveImageToDevice, isIOS } from "@/lib/saveImage";
 import { annotateImage } from "@/lib/annotateImage";
 
 // 撮影日時を "YYYY-MM-DD HH:mm"(ローカル時刻)で返す
@@ -41,18 +41,23 @@ export default function GuidancePage() {
   //    api.ts 側で完結でき、画像に焼き込むラベルは orderLabel(= ordername || orderid ||
   //    "(不明)") 側で吸収するため、orderId 必須条件を外す。
   //  - どちらでもない直リンク: 従来どおり orderid & name が URL にあればスキップ。
-  type Mode = "auth" | "confirm-user" | "guidance" | "camera";
+  type Mode = "auth" | "confirm-user" | "guidance" | "camera" | "ask-save";
   const [mode, setMode] = useState<Mode>(
     isFromFF
       ? "guidance"
       : (isFromUploadCenter && !!uploadId)
         ? "confirm-user"
-        : (searchParams.get("orderid") && searchParams.get("name"))
+        : searchParams.get("name")
           ? "guidance"
           : "auth"
   );
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Green へのアップロード成功後、「端末にも保存しますか?」の確認(ask-save)で使う画像。
+  //   2026-09-05 冨永社長指示: 取扱店が事前撮影 → 端末にも控えを残す、という使い方があるため、
+  //   埋め込みモードでも端末保存を選べるようにする(自動では保存しない。任意)。
+  const [pendingSave, setPendingSave] = useState<{ blob: Blob; filename: string } | null>(null);
+  const [savingToDevice, setSavingToDevice] = useState(false);
 
   // インソール利用者名(uploads.insole_user_name = 発注時に登録された「何様の」インソールか)。
   //   【なぜ必要か (2026-09-05 冨永社長指示)】操作している人(注文者)と、実際に足を撮影される人
@@ -139,22 +144,28 @@ export default function GuidancePage() {
     }
   }, [mode, nameFetchDone, insoleUserName]);
 
+  // 単独アクセス(upload-center を経由しない直接アクセス)時の確認フォーム。
+  //   2026-09-05 冨永社長指示: オーダーIDは「どこにあるか分からない」お客様がほとんどのため
+  //   必須項目から外す。画像の見分けはお名前だけで十分。
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (orderId && userName) {
+    if (userName) {
       setMode("guidance");
     } else {
-      alert("オーダーIDと名前を入力してください。");
+      alert("お名前を入力してください。");
     }
   };
 
   // 画像の下部に焼き込む行(注文番号・お名前・撮影日時)。
-  //   お名前は uploads.insole_user_name(confirm-user で確認済みの「何様の」インソールか)。
+  //   お名前は uploads.insole_user_name(confirm-user で確認済みの「何様の」インソールか)、
+  //   または単独アクセス時に入力してもらった userName。
   //   顔が映らない足だけの写真では誰の撮影か分からないため、A4紙に手書きしてもらっていた
-  //   名前をここで自動的に代替する(2026-09-05 冨永社長指示)。
+  //   名前をここで自動的に代替する(2026-09-05 冨永社長指示)。単独アクセス時は
+  //   オーダーIDを入力させない(お客様が「どこにあるか分からない」ため)ので、
+  //   注文番号の行は分かる時だけ出す。
   const annotationLines = (now: Date) => [
-    `注文番号: ${orderLabel || "(不明)"}`,
-    insoleUserName ? `お名前: ${insoleUserName} 様` : null,
+    orderLabel ? `注文番号: ${orderLabel}` : null,
+    (insoleUserName || userName) ? `お名前: ${insoleUserName || userName} 様` : null,
     `撮影日時: ${formatNow(now)}`,
   ].filter((l): l is string => !!l);
 
@@ -197,11 +208,12 @@ export default function GuidancePage() {
 
       if (isEmbedded) {
         // upload-center / FF に埋め込まれている場合は Green Storage / uploads_files への
-        // アップロードのみを行い、自動で呼び出し元へ戻る。
+        // アップロードを行い、成功後に呼び出し元へ通知する。
         //   【2026-09-05 変更】以前はここで端末保存(navigator.share の OS 共有シート)を
-        //   先に挟んでいたが、共有シートが「別の画面に遷移した」ように見えてお客様が
-        //   混乱するとの指摘(冨永社長)。埋め込みモードでは Green への保存が主目的であり、
-        //   端末保存は不要なので撤去し、撮影→送信→自動で upload-center に戻る、を直結させる。
+        //   自動で挟んでいたが、共有シートが「別の画面に遷移した」ように見えてお客様が
+        //   混乱するとの指摘(冨永社長)。一方で取扱店が事前撮影 → 端末にも控えを残す、
+        //   という使い方もあるため、自動実行ではなく「端末にも保存しますか?」を
+        //   アプリ内の確認画面(ask-save)で尋ね、選んだ場合のみ保存する形にする。
         // セッション復元が進行中なら完了を待ってから送信する(未認証での空振り防止)
         if (sessionRestoreRef.current) {
           await sessionRestoreRef.current;
@@ -218,11 +230,12 @@ export default function GuidancePage() {
               { source: "foot-guidance", status: "uploaded", uploadId, orderId, kind: "foot" },
               returnOrigin || "*"
             );
-            // upload-center 側の一覧にすぐ反映されるよう一拍おいてから閉じる
-            setTimeout(() => window.close(), 300);
-          } else {
-            window.close();
           }
+          // upload-center 側にはすでに通知済み。ここでは閉じずに端末保存の意思確認へ。
+          // capturedBlob を消しておかないと PreviewModal が ask-save 画面の上に残ってしまう。
+          setPendingSave({ blob: annotated, filename });
+          setCapturedBlob(null);
+          setMode("ask-save");
         } else {
           alert(`アップロードに失敗しました: ${res.message}`);
         }
@@ -247,6 +260,25 @@ export default function GuidancePage() {
     }
   };
 
+  // 「端末にも保存しますか?」への回答(ask-save)。
+  //   「はい」ボタンの click ハンドラの中で saveImageToDevice を直接呼ぶことで、
+  //   navigator.share に必要なユーザー操作の有効化(user activation)を保つ。
+  const handleSaveYes = async () => {
+    if (!pendingSave) { window.close(); return; }
+    setSavingToDevice(true);
+    try {
+      await saveImageToDevice(pendingSave.blob, pendingSave.filename);
+    } catch (e) {
+      console.warn("端末保存に失敗:", e);
+    } finally {
+      setSavingToDevice(false);
+      window.close();
+    }
+  };
+  const handleSaveNo = () => {
+    window.close();
+  };
+
   return (
     <main className={`min-h-screen bg-gray-50 ${mode === "camera" ? "overflow-hidden h-[100dvh]" : ""}`}>
       {mode === "auth" && (
@@ -254,20 +286,9 @@ export default function GuidancePage() {
           <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
             <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">計測の準備</h1>
             <p className="text-sm text-gray-600 mb-6">
-              オーダーIDと、お名前（またはニックネーム）を入力してください。
+              お名前（またはニックネーム）を入力してください。撮影する方を後で見分けるために画像に記録します。
             </p>
             <form onSubmit={handleAuthSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">オーダーID</label>
-                <input
-                  type="text"
-                  value={orderId}
-                  onChange={(e) => setOrderId(e.target.value)}
-                  className="mt-1 block w-full border border-gray-600 rounded-md shadow-sm p-2 text-gray-900 placeholder:text-gray-400"
-                  placeholder="例: ORDER-123"
-                  required
-                />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">お名前</label>
                 <input
@@ -314,6 +335,39 @@ export default function GuidancePage() {
                 </p>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {mode === "ask-save" && (
+        <div className="flex flex-col items-center justify-center min-h-screen p-6">
+          <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-md text-center">
+            <h1 className="text-lg font-bold text-gray-800 mb-3">端末にも保存しますか？</h1>
+            <p className="text-sm text-gray-600 mb-6">
+              アップロードは完了しました。この端末にも画像を保存しておくと、後で見返すことができます。
+            </p>
+            {isIOS() && (
+              <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ color: "#2563EB", backgroundColor: "#DBEAFE" }}>
+                「はい」を選ぶと次に共有画面が開きます。そこで「画像を保存」を選んでください。
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleSaveNo}
+                disabled={savingToDevice}
+                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                いいえ
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveYes}
+                disabled={savingToDevice}
+                className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {savingToDevice ? "保存中…" : "はい、保存する"}
+              </button>
+            </div>
           </div>
         </div>
       )}
